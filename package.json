@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "build:ipa": "./scripts/build-ipa.sh",
     "build:apk": "./scripts/build-apk.sh",
+    "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:build:mac": "tauri build --bundles dmg,app",
