@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![SIMPAN Logo](public/icons/icon-192.png)
+![SIMPAN Logo](public/applogo.png)
 
 **Aplikasi Pengarsipan Digital Cerdas, Offline-First & Multi-Platform**  
 *Tersedia untuk Desktop (macOS & Windows), Mobile (Android & iOS), dan Web.*
