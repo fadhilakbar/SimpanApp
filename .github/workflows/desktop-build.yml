@@ -44,16 +44,7 @@ jobs:
         run: npm ci
 
       - name: Build Tauri Desktop App
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: "SIMPAN Desktop v__VERSION__"
-          releaseBody: "Automated desktop release build for macOS and Windows."
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+        run: npm run tauri build
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
