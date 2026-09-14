@@ -35,10 +35,14 @@ export async function openInSafariViewController(url: string): Promise<void> {
   }
 }
 
+import { downloadFileDirectly } from './fileExport';
+import { isTauri } from './platform';
+
 /**
  * Unduh berkas atau buka dialog simpan ke perangkat secara langsung dan aman.
- * Di Android & iOS: membuka Share Sheet dengan opsi "Simpan ke File / Unduh".
- * Di Web / Desktop: langsung men-download berkas ke folder Unduhan.
+ * Di Android & iOS: menyimpan ke Dokumen dan membuka Sheet "Simpan ke File".
+ * Di Desktop (Tauri macOS & Windows): langsung menulis ke folder Downloads dan membuka file di Finder/Explorer.
+ * Di Web: memicu unduhan Blob URL langsung ke folder browser.
  */
 export async function safeDownloadOrViewFile(options: SafeDownloadOptions): Promise<void> {
   const { title, dataUrl, textContent, mimeType = 'text/plain', filename } = options;
@@ -63,35 +67,24 @@ export async function safeDownloadOrViewFile(options: SafeDownloadOptions): Prom
   const finalFilename = filename || `${safeBase}.${defaultExt}`;
 
   try {
-    if (dataUrl) {
-      await shareContent({
-        title,
-        text: `Arsip: ${title}`,
-        dataUrl,
-        filename: finalFilename,
-        mimeType,
-      });
-    } else if (textContent) {
-      await saveOrShareTextFile(finalFilename, textContent, mimeType);
-    }
-    showSuccess('Berkas Diekspor', `Berkas ${finalFilename} siap disimpan ke perangkat Anda.`);
+    const savedPath = await downloadFileDirectly({
+      filename: finalFilename,
+      title,
+      dataUrl,
+      textContent,
+      mimeType,
+    });
+
+    const isDesktopApp = isTauri();
+    const displayName = savedPath.split(/[/\\]/).pop() || finalFilename;
+    showSuccess(
+      'Berhasil Diunduh',
+      isDesktopApp
+        ? `Berkas tersimpan di folder Unduhan (Downloads):\n${displayName}`
+        : `Berkas ${finalFilename} berhasil diunduh ke perangkat.`
+    );
   } catch (err) {
-    console.error('Download/Share error:', err);
-    // Fallback terakhir lewat <a> download di browser/web
-    try {
-      const targetUrl =
-        dataUrl || (textContent ? URL.createObjectURL(new Blob([textContent], { type: `${mimeType};charset=utf-8` })) : null);
-      if (targetUrl) {
-        const link = document.createElement('a');
-        link.href = targetUrl;
-        link.download = finalFilename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showSuccess('Berhasil Diunduh', `Berkas ${finalFilename} telah diunduh.`);
-      }
-    } catch (_fallbackErr) {
-      showError('Gagal Mengunduh', 'Tidak dapat mengekspor berkas ke perangkat.');
-    }
+    console.error('Download error:', err);
+    showError('Gagal Mengunduh', 'Tidak dapat mengekspor berkas ke perangkat.');
   }
 }

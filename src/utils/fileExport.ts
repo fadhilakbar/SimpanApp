@@ -62,15 +62,129 @@ function getSafeExtension(filename?: string, mime?: string, fallback = 'bin'): s
   return fallback;
 }
 
+import { isTauri } from './platform';
+import { showSuccess } from './swal';
+
+export interface DirectDownloadOptions {
+  filename?: string;
+  title?: string;
+  dataUrl?: string;
+  textContent?: string;
+  mimeType?: string;
+}
+
 /**
- * Membagikan teks dan/atau berkas lewat native Share Sheet.
- * Mendukung Android, iOS, Desktop, dan Web.
+ * Konversi data URL ke Blob secara aman tanpa membebani browser memory
+ */
+export async function dataUrlToBlob(url: string, fallbackMime = 'application/octet-stream'): Promise<Blob> {
+  if (url.startsWith('data:')) {
+    const arr = url.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : fallbackMime;
+    const bstr = atob(arr[1] || '');
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  }
+  const res = await fetch(url);
+  return await res.blob();
+}
+
+/**
+ * Unduh berkas langsung ke penyimpanan (Downloads di Desktop, Documents/Share di Mobile, Blob di Web)
+ */
+export async function downloadFileDirectly(options: DirectDownloadOptions): Promise<string> {
+  const { title, textContent, mimeType, dataUrl } = options;
+  const ext = getSafeExtension(options.filename, mimeType, 'txt');
+  const safeBaseName = (options.filename || title || 'berkas_simpan')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+  const finalFilename = `${safeBaseName}.${ext}`;
+
+  // 1. Desktop Tauri (macOS & Windows Native)
+  if (isTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      if (dataUrl) {
+        const savedPath = await invoke<string>('save_file_to_downloads', {
+          filename: finalFilename,
+          base64Data: dataUrl,
+        });
+        return savedPath;
+      } else if (textContent) {
+        const savedPath = await invoke<string>('save_text_to_downloads', {
+          filename: finalFilename,
+          content: textContent,
+        });
+        return savedPath;
+      }
+    } catch (tauriErr) {
+      console.warn('Tauri native save failed, falling back to web blob:', tauriErr);
+    }
+  }
+
+  // 2. Mobile Capacitor Native (Android & iOS)
+  if (Capacitor.isNativePlatform()) {
+    if (dataUrl) {
+      const { base64Data, mimeType: detectedMime } = await urlToBase64(dataUrl);
+      const { uri } = await Filesystem.writeFile({
+        path: finalFilename,
+        data: base64Data,
+        directory: Directory.Documents,
+      });
+      await Share.share({
+        title: title || finalFilename,
+        url: uri,
+        dialogTitle: 'Simpan / Unduh Berkas',
+      });
+      return uri;
+    } else if (textContent) {
+      const { uri } = await Filesystem.writeFile({
+        path: finalFilename,
+        data: textContent,
+        directory: Directory.Documents,
+        encoding: Encoding.UTF8,
+      });
+      await Share.share({
+        title: title || finalFilename,
+        url: uri,
+        dialogTitle: 'Simpan / Unduh Berkas',
+      });
+      return uri;
+    }
+  }
+
+  // 3. Web Browser (Chrome, Edge, Safari, Firefox)
+  let blob: Blob;
+  if (dataUrl) {
+    blob = await dataUrlToBlob(dataUrl, mimeType);
+  } else {
+    blob = new Blob([textContent || ''], { type: `${mimeType || 'text/plain'};charset=utf-8` });
+  }
+
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = finalFilename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 2500);
+  return finalFilename;
+}
+
+/**
+ * Membagikan teks dan/atau berkas lewat native Share Sheet atau Clipboard + Unduhan
+ * Mendukung Android, iOS, Desktop (Tauri macOS / Windows), dan Web.
  */
 export async function shareContent(options: ShareContentOptions): Promise<void> {
   const { title, text, dataUrl, filename, mimeType } = options;
 
+  // 1. Capacitor Native (Android & iOS)
   if (Capacitor.isNativePlatform()) {
-    // 1. Jika URL adalah native path Capacitor WebView:
     if (dataUrl && dataUrl.includes('/_capacitor_file_')) {
       const nativePath = dataUrl.replace(/^https?:\/\/[^/]+\/_capacitor_file_/, '');
       const fileUri = nativePath.startsWith('file://') ? nativePath : `file://${nativePath}`;
@@ -87,7 +201,6 @@ export async function shareContent(options: ShareContentOptions): Promise<void> 
       }
     }
 
-    // 2. Jika berkas berupa data URL, blob, atau HTTP:
     if (dataUrl) {
       try {
         const { base64Data, mimeType: detectedMime } = await urlToBase64(dataUrl);
@@ -116,7 +229,6 @@ export async function shareContent(options: ShareContentOptions): Promise<void> 
       }
     }
 
-    // Fallback share teks saja jika tidak ada berkas atau gagal
     await Share.share({
       title,
       text: text || title || 'Arsip SIMPAN',
@@ -125,18 +237,18 @@ export async function shareContent(options: ShareContentOptions): Promise<void> 
     return;
   }
 
-  // 3. Web & Desktop PWA: Web Share API jika tersedia
+  // 2. Web Share API jika tersedia (Mobile Safari, Chrome Android, macOS Safari)
   if (typeof navigator !== 'undefined' && navigator.share) {
     try {
       if (dataUrl) {
-        const res = await fetch(dataUrl);
-        const blob = await res.blob();
-        const finalMime = mimeType || blob.type || 'application/octet-stream';
-        const ext = getSafeExtension(filename, finalMime, 'bin');
+        const blob = await dataUrlToBlob(dataUrl, mimeType);
+        const ext = getSafeExtension(filename, mimeType || blob.type, 'bin');
         const safeBaseName = (filename || title || 'berkas_simpan')
           .replace(/\.[^/.]+$/, '')
           .replace(/[^a-zA-Z0-9_-]/g, '_');
-        const file = new File([blob], `${safeBaseName}.${ext}`, { type: finalMime });
+        const file = new File([blob], `${safeBaseName}.${ext}`, {
+          type: blob.type || mimeType || 'application/octet-stream',
+        });
 
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title, text });
@@ -148,27 +260,47 @@ export async function shareContent(options: ShareContentOptions): Promise<void> 
       return;
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
+      console.warn('Web share API dibatalkan/gagal, fallback ke clipboard:', err);
     }
   }
 
-  // 4. Fallback Desktop / Browser: Unduh berkas langsung
-  if (dataUrl) {
-    const ext = getSafeExtension(filename, mimeType, 'bin');
-    const safeBaseName = (filename || title || 'berkas_simpan')
-      .replace(/\.[^/.]+$/, '')
-      .replace(/[^a-zA-Z0-9_-]/g, '_');
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `${safeBaseName}.${ext}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    return;
+  // 3. Desktop (Tauri Windows / macOS / Web Desktop)
+  let copied = false;
+  if (text && typeof navigator !== 'undefined' && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (clipErr) {
+      console.warn('Clipboard write failed:', clipErr);
+    }
   }
 
-  // 5. Fallback Teks Clipboard
-  if (text && typeof navigator !== 'undefined' && navigator.clipboard) {
-    await navigator.clipboard.writeText(text);
+  let downloadedPath: string | null = null;
+  if (dataUrl) {
+    try {
+      downloadedPath = await downloadFileDirectly({
+        filename,
+        title,
+        dataUrl,
+        mimeType,
+      });
+    } catch (dlErr) {
+      console.warn('Share auto-download failed:', dlErr);
+    }
+  }
+
+  if (copied && downloadedPath) {
+    showSuccess(
+      'Berhasil Dibagikan',
+      'Teks ringkasan arsip telah disalin ke Clipboard (siap di-paste ke WhatsApp/Email)! Berkas juga otomatis tersimpan di folder Unduhan.'
+    );
+  } else if (copied) {
+    showSuccess(
+      'Teks Disalin',
+      'Teks ringkasan arsip telah disalin ke Clipboard (siap di-paste ke WhatsApp/Email).'
+    );
+  } else if (downloadedPath) {
+    showSuccess('Berkas Tersimpan', 'Berkas telah disimpan ke folder Unduhan Anda.');
   }
 }
 
