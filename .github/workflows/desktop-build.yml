@@ -10,7 +10,7 @@ on:
 jobs:
   build-tauri:
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -55,3 +55,12 @@ jobs:
             src-tauri/target/**/bundle/msi/*.msi
             src-tauri/target/**/bundle/nsis/*.exe
           if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### 🚀 SIMPAN Desktop Build (${{ matrix.platform }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: \`${{ matrix.platform }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: \`${{ matrix.target }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: Selesai. Unduh file installer di bagian **Artifacts**." >> $GITHUB_STEP_SUMMARY
