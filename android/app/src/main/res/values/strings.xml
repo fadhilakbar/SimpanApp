@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SIMPAN</string>
+    <string name="title_activity_main">SIMPAN</string>
+    <string name="package_name">com.kynandev.simpan</string>
+    <string name="custom_url_scheme">com.kynandev.simpan</string>
+</resources>

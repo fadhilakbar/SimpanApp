@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SIMPAN membutuhkan izin akses mikrofon untuk merekam dan mentranskripsi catatan suara Anda.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>SIMPAN membutuhkan izin kamera untuk memindai dokumen dan struk transaksi.</string>
+</dict>
+</plist>
